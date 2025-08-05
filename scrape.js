@@ -409,15 +409,19 @@ const watchForBatchedReviews = (
       '[data-ad-rendering-role="story_message"]'
     ).length;
 
+    console.log(
+      `🔍 Element check: current=${currentElementCount}, last=${lastElementCount}, consecutive=${consecutiveNoNewElementsCount}`
+    );
+
     if (currentElementCount === lastElementCount) {
       consecutiveNoNewElementsCount++;
       console.log(
         `📊 No new elements detected (attempt ${consecutiveNoNewElementsCount}/3)`
       );
 
-      if (consecutiveNoNewElementsCount >= 3) {
+      if (consecutiveNoNewElementsCount >= 5) {
         console.log(
-          '🏁 No new elements added for 3 consecutive checks - reached end of reviews'
+          '🏁 No new elements added for 5 consecutive checks - reached end of reviews'
         );
         return true; // End detected
       }
@@ -649,7 +653,7 @@ const watchForBatchedReviews = (
           }
         }
       }
-    }, 3000); // Wait 3 seconds for content to load
+    }, 5000); // Wait 5 seconds for content to load (increased from 3)
   };
 
   // Set up observer to watch for new content
@@ -707,7 +711,7 @@ const watchForBatchedReviews = (
     getEndDetectionStatus: () => ({
       consecutiveNoNewElements: consecutiveNoNewElementsCount,
       lastElementCount: lastElementCount,
-      endDetected: consecutiveNoNewElementsCount >= 3
+      endDetected: consecutiveNoNewElementsCount >= 5
     }),
     forceDownload: () => {
       const remainingReviews = allReviews.slice(lastDownloadCount);
