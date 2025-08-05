@@ -43,10 +43,45 @@ const readReviewFiles = directoryPath => {
   return allReviews;
 };
 
+// Function to convert reviews to CSV format
+const convertToCSV = reviews => {
+  // CSV headers
+  const headers = ['Name', 'Profile', 'Review', 'Rating', 'ID'];
+
+  // Convert each review to CSV row
+  const csvRows = reviews.map(review => {
+    // Escape quotes and wrap in quotes if contains comma or newline
+    const escapeCSV = text => {
+      if (!text) return '';
+      const escaped = text.replace(/"/g, '""');
+      if (
+        escaped.includes(',') ||
+        escaped.includes('\n') ||
+        escaped.includes('"')
+      ) {
+        return `"${escaped}"`;
+      }
+      return escaped;
+    };
+
+    return [
+      escapeCSV(review.name || ''),
+      escapeCSV(review.profile || ''),
+      escapeCSV(review.review || ''),
+      escapeCSV(review.rating || ''),
+      escapeCSV(review.id || '')
+    ].join(',');
+  });
+
+  // Combine headers and rows
+  return [headers.join(','), ...csvRows].join('\n');
+};
+
 // Main execution
 const directory = './review-files'; // Directory where JSON files are stored
 const outputDirectory = './combined-reviews'; // Directory to save combined output
-const outputFileName = 'combined-facebook-reviews.json';
+const jsonOutputFileName = 'combined-facebook-reviews.json';
+const csvOutputFileName = 'combined-facebook-reviews.csv';
 
 console.log('Starting review file combination...');
 
@@ -59,7 +94,7 @@ try {
 
   const combinedReviews = readReviewFiles(directory);
 
-  // Add metadata
+  // Add metadata for JSON
   const finalOutput = {
     metadata: {
       generatedAt: new Date().toISOString(),
@@ -72,10 +107,23 @@ try {
     reviews: combinedReviews
   };
 
-  const outputPath = path.join(outputDirectory, outputFileName);
-  fs.writeFileSync(outputPath, JSON.stringify(finalOutput, null, 2), 'utf8');
+  // Save JSON file
+  const jsonOutputPath = path.join(outputDirectory, jsonOutputFileName);
+  fs.writeFileSync(
+    jsonOutputPath,
+    JSON.stringify(finalOutput, null, 2),
+    'utf8'
+  );
+  console.log(`✅ Saved JSON: ${jsonOutputPath}`);
+
+  // Save CSV file
+  const csvOutputPath = path.join(outputDirectory, csvOutputFileName);
+  const csvContent = convertToCSV(combinedReviews);
+  fs.writeFileSync(csvOutputPath, csvContent, 'utf8');
+  console.log(`✅ Saved CSV: ${csvOutputPath}`);
+
   console.log(
-    `Successfully combined ${combinedReviews.length} unique reviews into ${outputPath}`
+    `🎉 Successfully combined ${combinedReviews.length} unique reviews into both formats!`
   );
 } catch (error) {
   console.error('Failed to combine reviews:', error);
