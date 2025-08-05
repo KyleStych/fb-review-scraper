@@ -176,17 +176,39 @@ When `autoDownloadOnStop` is enabled:
 ## File Management
 
 ### Combining Multiple Files
-Use the included `combine-reviews.js` script to merge multiple downloaded files:
+Use the included `combineReviews.js` script to merge multiple downloaded files:
 
 ```bash
-node combine-reviews.js
+# Standard format
+node combineReviews.js
+
+# Judge.me format (for Shopify Judge.me app import)
+node combineReviews.js -jm
 ```
 
 This will:
 - Read all JSON files from `./review-files/`
 - Remove duplicates
-- Create a combined file with metadata
-- Save as `combined-facebook-reviews.json`
+- Create combined files with metadata
+- Save as `combined-facebook-reviews.json` and `combined-facebook-reviews.csv`
+
+#### Judge.me Mode (`-jm` flag)
+When using the `-jm` flag, the script converts the data format for Judge.me import:
+- **"Recommended"** → **5** (5 stars)
+- **"Not Recommended"** → **1** (1 star)  
+- **"review"** → **"body"** (field name change)
+- Output files: `judge-me-facebook-reviews.json` and `judge-me-facebook-reviews.csv`
+
+**Example Judge.me JSON:**
+```json
+{
+  "name": "John Doe",
+  "profile": "https://facebook.com/john.doe", 
+  "body": "Great service!",
+  "rating": 5,
+  "id": "JohnDoe_Greatservice"
+}
+```
 
 ## License
 

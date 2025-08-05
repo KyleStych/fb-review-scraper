@@ -1,6 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 
+// Check for Judge.me flag
+const isJudgeMe = process.argv.includes('-jm');
+if (isJudgeMe) {
+  console.log('🎯 Judge.me mode enabled - converting format for import...');
+}
+
 // Function to read all JSON files from a directory
 const readReviewFiles = directoryPath => {
   const files = fs.readdirSync(directoryPath);
@@ -24,13 +30,27 @@ const readReviewFiles = directoryPath => {
 
       reviewArray.forEach(review => {
         // Create a unique ID for duplicate checking
-        const reviewId = `${review.name}_${review.review
+        const reviewText = review.review || '';
+        const reviewId = `${review.name}_${reviewText
           .substring(0, 50)
           .replace(/[^a-zA-Z0-9]/g, '')}`;
 
         if (!seenReviews.has(reviewId)) {
           seenReviews.add(reviewId);
-          allReviews.push(review);
+
+          // Convert for Judge.me if flag is enabled
+          if (isJudgeMe) {
+            const judgeMeReview = {
+              name: review.name,
+              profile: review.profile,
+              body: review.review, // Change "review" to "body"
+              rating: review.rating === 'Recommended' ? 5 : 1, // Convert to star rating
+              id: review.id
+            };
+            allReviews.push(judgeMeReview);
+          } else {
+            allReviews.push(review);
+          }
         } else {
           console.log(`Skipping duplicate review from ${file}: ${review.name}`);
         }
@@ -45,14 +65,16 @@ const readReviewFiles = directoryPath => {
 
 // Function to convert reviews to CSV format
 const convertToCSV = reviews => {
-  // CSV headers
-  const headers = ['Name', 'Profile', 'Review', 'Rating', 'ID'];
+  // CSV headers - adjust based on Judge.me mode
+  const headers = isJudgeMe
+    ? ['Name', 'Profile', 'Body', 'Rating', 'ID']
+    : ['Name', 'Profile', 'Review', 'Rating', 'ID'];
 
   // Convert each review to CSV row
   const csvRows = reviews.map(review => {
     // Escape quotes and wrap in quotes if contains comma or newline
     const escapeCSV = text => {
-      if (!text) return '';
+      if (!text || typeof text !== 'string') return '';
       const escaped = text.replace(/"/g, '""');
       if (
         escaped.includes(',') ||
@@ -64,11 +86,15 @@ const convertToCSV = reviews => {
       return escaped;
     };
 
+    // Use appropriate field names based on mode
+    const reviewText = isJudgeMe ? review.body || '' : review.review || '';
+    const rating = isJudgeMe ? review.rating || '' : review.rating || '';
+
     return [
       escapeCSV(review.name || ''),
       escapeCSV(review.profile || ''),
-      escapeCSV(review.review || ''),
-      escapeCSV(review.rating || ''),
+      escapeCSV(reviewText),
+      isJudgeMe ? rating || '' : escapeCSV(rating), // Don't escape numbers in Judge.me mode
       escapeCSV(review.id || '')
     ].join(',');
   });
@@ -80,8 +106,12 @@ const convertToCSV = reviews => {
 // Main execution
 const directory = './review-files'; // Directory where JSON files are stored
 const outputDirectory = './combined-reviews'; // Directory to save combined output
-const jsonOutputFileName = 'combined-facebook-reviews.json';
-const csvOutputFileName = 'combined-facebook-reviews.csv';
+const jsonOutputFileName = isJudgeMe
+  ? 'judge-me-facebook-reviews.json'
+  : 'combined-facebook-reviews.json';
+const csvOutputFileName = isJudgeMe
+  ? 'judge-me-facebook-reviews.csv'
+  : 'combined-facebook-reviews.csv';
 
 console.log('Starting review file combination...');
 
@@ -102,7 +132,8 @@ try {
       sourceDirectory: directory,
       combinedFromFiles: fs
         .readdirSync(directory)
-        .filter(file => file.endsWith('.json'))
+        .filter(file => file.endsWith('.json')),
+      format: isJudgeMe ? 'judge-me' : 'standard'
     },
     reviews: combinedReviews
   };
@@ -125,6 +156,12 @@ try {
   console.log(
     `🎉 Successfully combined ${combinedReviews.length} unique reviews into both formats!`
   );
+
+  if (isJudgeMe) {
+    console.log(
+      '📋 Judge.me format: "Recommended" → 5 stars, "review" → "body"'
+    );
+  }
 } catch (error) {
   console.error('Failed to combine reviews:', error);
 }
