@@ -350,10 +350,19 @@ const downloadReviews = (
   const link = document.createElement('a');
   link.href = URL.createObjectURL(dataBlob);
   link.download = filename;
+
+  // Add to DOM and trigger download
+  link.style.display = 'none';
+  document.body.appendChild(link);
   link.click();
 
-  URL.revokeObjectURL(link.href);
-  console.log(`Reviews downloaded as: ${filename}`);
+  // Clean up
+  setTimeout(() => {
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  }, 100);
+
+  console.log(`✅ Reviews downloaded as: ${filename}`);
 };
 
 // Add copy to clipboard function
@@ -374,12 +383,14 @@ const watchForBatchedReviews = (
   batchSize = 20,
   callback = null,
   debug = false,
-  autoScroll = false
+  autoScroll = false,
+  autoDownloadOnStop = false
 ) => {
   console.log(
     `=== Setting up batched review watcher (${batchSize} reviews per batch) ===`
   );
   if (autoScroll) console.log('🔄 Auto-scroll mode enabled');
+  if (autoDownloadOnStop) console.log('📥 Auto-download on stop enabled');
 
   let allReviews = [];
   let lastDownloadCount = 0;
@@ -511,6 +522,33 @@ const watchForBatchedReviews = (
           setTimeout(performAutoScroll, 2000);
         } else if (endDetected) {
           console.log('🛑 Stopping auto-scroll - reached end of reviews');
+
+          // Auto-download remaining reviews when end is detected
+          const remainingReviews = allReviews.slice(lastDownloadCount);
+          if (remainingReviews.length > 0) {
+            if (autoDownloadOnStop) {
+              console.log(
+                `📦 Auto-downloading ${remainingReviews.length} remaining reviews...`
+              );
+              const timestamp = Date.now();
+              const startReview = lastDownloadCount + 1;
+              const endReview = allReviews.length;
+              const filename = `facebook-reviews-${String(startReview).padStart(
+                3,
+                '0'
+              )}-${String(endReview).padStart(3, '0')}-final-${timestamp}.json`;
+
+              downloadReviews(remainingReviews, filename);
+              lastDownloadCount = allReviews.length;
+              console.log(
+                `✅ Final download complete - all reviews collected!`
+              );
+            } else {
+              console.log(
+                `📦 ${remainingReviews.length} reviews remaining. Use scraper.downloadRemaining() to download them.`
+              );
+            }
+          }
         }
       } else {
         noNewReviewsCount++;
@@ -520,7 +558,47 @@ const watchForBatchedReviews = (
 
         // If we haven't scrolled much, we might be at the end
         if (scrollDistance < 100) {
-          console.log('🏁 Reached end of page - stopping auto-scroll');
+          console.log(
+            '🏁 Reached end of page - attempting restart before stopping...'
+          );
+
+          // Try one more restart attempt before giving up
+          if (autoScroll) {
+            console.log('🔄 Attempting one final restart before stopping...');
+            noNewReviewsCount = 0; // Reset counter for restart attempt
+            consecutiveNoNewElementsCount = 0; // Reset end detection for restart
+            setTimeout(() => {
+              performAutoScroll();
+            }, 2000);
+            return; // Don't download yet, let the restart attempt complete
+          }
+
+          // Auto-download remaining reviews when reaching end of page
+          const remainingReviews = allReviews.slice(lastDownloadCount);
+          if (remainingReviews.length > 0) {
+            if (autoDownloadOnStop) {
+              console.log(
+                `📦 Auto-downloading ${remainingReviews.length} remaining reviews...`
+              );
+              const timestamp = Date.now();
+              const startReview = lastDownloadCount + 1;
+              const endReview = allReviews.length;
+              const filename = `facebook-reviews-${String(startReview).padStart(
+                3,
+                '0'
+              )}-${String(endReview).padStart(3, '0')}-final-${timestamp}.json`;
+
+              downloadReviews(remainingReviews, filename);
+              lastDownloadCount = allReviews.length;
+              console.log(
+                `✅ Final download complete - all reviews collected!`
+              );
+            } else {
+              console.log(
+                `📦 ${remainingReviews.length} reviews remaining. Use scraper.downloadRemaining() to download them.`
+              );
+            }
+          }
           return;
         }
 
@@ -531,6 +609,44 @@ const watchForBatchedReviews = (
           console.log(
             '🛑 Stopping auto-scroll after 3 attempts with no new reviews or end detected'
           );
+
+          // Try one more restart attempt before giving up
+          if (autoScroll && noNewReviewsCount >= 3 && !endDetected) {
+            console.log('🔄 Attempting one final restart before stopping...');
+            noNewReviewsCount = 0; // Reset counter for restart attempt
+            consecutiveNoNewElementsCount = 0; // Reset end detection for restart
+            setTimeout(() => {
+              performAutoScroll();
+            }, 2000);
+            return; // Don't download yet, let the restart attempt complete
+          }
+
+          // Auto-download remaining reviews when stopping
+          const remainingReviews = allReviews.slice(lastDownloadCount);
+          if (remainingReviews.length > 0) {
+            if (autoDownloadOnStop) {
+              console.log(
+                `📦 Auto-downloading ${remainingReviews.length} remaining reviews...`
+              );
+              const timestamp = Date.now();
+              const startReview = lastDownloadCount + 1;
+              const endReview = allReviews.length;
+              const filename = `facebook-reviews-${String(startReview).padStart(
+                3,
+                '0'
+              )}-${String(endReview).padStart(3, '0')}-final-${timestamp}.json`;
+
+              downloadReviews(remainingReviews, filename);
+              lastDownloadCount = allReviews.length;
+              console.log(
+                `✅ Final download complete - all reviews collected!`
+              );
+            } else {
+              console.log(
+                `📦 ${remainingReviews.length} reviews remaining. Use scraper.downloadRemaining() to download them.`
+              );
+            }
+          }
         }
       }
     }, 3000); // Wait 3 seconds for content to load
@@ -595,6 +711,7 @@ const watchForBatchedReviews = (
     }),
     forceDownload: () => {
       const remainingReviews = allReviews.slice(lastDownloadCount);
+
       if (remainingReviews.length > 0) {
         const timestamp = Date.now();
         const startReview = lastDownloadCount + 1;
@@ -603,8 +720,14 @@ const watchForBatchedReviews = (
           3,
           '0'
         )}-${String(endReview).padStart(3, '0')}-remaining-${timestamp}.json`;
+
+        console.log(
+          `📦 Downloading remaining reviews: ${startReview}-${endReview}`
+        );
         downloadReviews(remainingReviews, filename);
         lastDownloadCount = allReviews.length;
+      } else {
+        console.log(`⚠️ No remaining reviews to download`);
       }
     },
     resetGlobalTracking: () => {
@@ -638,11 +761,17 @@ window.copyReviewsToClipboard = copyReviewsToClipboard;
 window.watchForBatchedReviews = watchForBatchedReviews;
 
 // Simple one-function startup for scraping
-const scrapeInit = (batchSize = 30, debug = false, autoScroll = true) => {
+const scrapeInit = (
+  batchSize = 30,
+  debug = false,
+  autoScroll = true,
+  autoDownloadOnStop = false
+) => {
   console.log('🚀 Starting Facebook Review Scraper...');
   console.log(`📦 Batch size: ${batchSize} reviews per download`);
   if (debug) console.log('🐛 DEBUG MODE ENABLED');
   if (autoScroll) console.log('🔄 AUTO-SCROLL MODE ENABLED');
+  if (autoDownloadOnStop) console.log('📥 AUTO-DOWNLOAD ON STOP ENABLED');
   console.log('📜 Scroll down to load more reviews...');
 
   // Set up the batched watcher with a simple callback
@@ -654,7 +783,8 @@ const scrapeInit = (batchSize = 30, debug = false, autoScroll = true) => {
       );
     },
     debug,
-    autoScroll
+    autoScroll,
+    autoDownloadOnStop
   );
 
   // Return the batcher object for manual control
@@ -693,6 +823,9 @@ const scrapeInit = (batchSize = 30, debug = false, autoScroll = true) => {
       batcher.observer.disconnect();
       if (autoScroll) {
         batcher.stopAutoScroll();
+      }
+      if (autoDownloadOnStop) {
+        batcher.forceDownload();
       }
     },
     // Add debug method
