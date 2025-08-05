@@ -389,6 +389,37 @@ const watchForBatchedReviews = (
   let noNewReviewsCount = 0;
   let lastScrollPosition = 0;
   let isProcessingReviews = false; // Prevent double processing
+  let consecutiveNoNewElementsCount = 0; // Track when no new elements are added
+  let lastElementCount = 0; // Track total elements on page
+
+  // Function to check if new elements are being added
+  const checkForNewElements = () => {
+    const currentElementCount = document.querySelectorAll(
+      '[data-ad-rendering-role="story_message"]'
+    ).length;
+
+    if (currentElementCount === lastElementCount) {
+      consecutiveNoNewElementsCount++;
+      console.log(
+        `📊 No new elements detected (attempt ${consecutiveNoNewElementsCount}/3)`
+      );
+
+      if (consecutiveNoNewElementsCount >= 3) {
+        console.log(
+          '🏁 No new elements added for 3 consecutive checks - reached end of reviews'
+        );
+        return true; // End detected
+      }
+    } else {
+      consecutiveNoNewElementsCount = 0; // Reset counter when new elements found
+      console.log(
+        `📊 New elements detected: ${currentElementCount} total (was ${lastElementCount})`
+      );
+    }
+
+    lastElementCount = currentElementCount;
+    return false; // Continue
+  };
 
   // Function to process new reviews
   const processNewReviews = reviews => {
@@ -411,28 +442,31 @@ const watchForBatchedReviews = (
       allReviews = [...allReviews, ...newReviews];
       console.log(`Total unique reviews collected: ${allReviews.length}`);
       noNewReviewsCount = 0; // Reset counter when we find new reviews
-
-      // Check if we've reached the batch size
-      const newReviewsInBatch = allReviews.length - lastDownloadCount;
-      if (newReviewsInBatch >= batchSize) {
-        const batchReviews = allReviews.slice(lastDownloadCount);
-        const timestamp = Date.now();
-        const startReview = lastDownloadCount + 1;
-        const endReview = allReviews.length;
-        const filename = `facebook-reviews-${startReview}-${endReview}-${timestamp}.json`;
-
-        console.log(
-          `📦 Batch ready! Downloading ${batchReviews.length} reviews (${startReview}-${endReview})...`
-        );
-        downloadReviews(batchReviews, filename);
-        lastDownloadCount = allReviews.length;
-
-        if (callback) {
-          callback(batchReviews, allReviews.length);
-        }
-      }
     } else {
       console.log('No new unique reviews found');
+    }
+
+    // Check if we've reached the batch size (check every time, not just when new reviews are found)
+    const newReviewsInBatch = allReviews.length - lastDownloadCount;
+    if (newReviewsInBatch >= batchSize) {
+      const batchReviews = allReviews.slice(lastDownloadCount);
+      const timestamp = Date.now();
+      const startReview = lastDownloadCount + 1;
+      const endReview = allReviews.length;
+      const filename = `facebook-reviews-${String(startReview).padStart(
+        3,
+        '0'
+      )}-${String(endReview).padStart(3, '0')}-${timestamp}.json`;
+
+      console.log(
+        `📦 Batch ready! Downloading ${batchReviews.length} reviews (${startReview}-${endReview})...`
+      );
+      downloadReviews(batchReviews, filename);
+      lastDownloadCount = allReviews.length;
+
+      if (callback) {
+        callback(batchReviews, allReviews.length);
+      }
     }
 
     isProcessingReviews = false;
@@ -462,6 +496,9 @@ const watchForBatchedReviews = (
       const currentPosition = window.pageYOffset;
       const scrollDistance = currentPosition - lastScrollPosition;
 
+      // Check if new elements are being added to the page
+      const endDetected = checkForNewElements();
+
       // Check if we found new reviews after scrolling
       const currentReviews = scrapeReviewsWithMarkers();
 
@@ -470,8 +507,10 @@ const watchForBatchedReviews = (
         processNewReviews(currentReviews);
 
         // Continue scrolling after a short delay
-        if (autoScroll) {
+        if (autoScroll && !endDetected) {
           setTimeout(performAutoScroll, 2000);
+        } else if (endDetected) {
+          console.log('🛑 Stopping auto-scroll - reached end of reviews');
         }
       } else {
         noNewReviewsCount++;
@@ -486,11 +525,11 @@ const watchForBatchedReviews = (
         }
 
         // Continue scrolling even if no new reviews found (up to 3 attempts)
-        if (autoScroll && noNewReviewsCount < 3) {
+        if (autoScroll && noNewReviewsCount < 3 && !endDetected) {
           setTimeout(performAutoScroll, 3000);
-        } else if (noNewReviewsCount >= 3) {
+        } else if (noNewReviewsCount >= 3 || endDetected) {
           console.log(
-            '🛑 Stopping auto-scroll after 3 attempts with no new reviews'
+            '🛑 Stopping auto-scroll after 3 attempts with no new reviews or end detected'
           );
         }
       }
@@ -523,6 +562,19 @@ const watchForBatchedReviews = (
     console.log(
       '🔄 Auto-scroll mode: Will automatically scroll to load more reviews'
     );
+
+    // Initial scan of existing content before starting auto-scroll
+    console.log('🔍 Performing initial scan of existing page content...');
+    const initialReviews = scrapeReviewsWithMarkers();
+    if (initialReviews.length > 0) {
+      console.log(
+        `📋 Found ${initialReviews.length} reviews on initial page scan`
+      );
+      processNewReviews(initialReviews);
+    } else {
+      console.log('📋 No reviews found in initial page scan');
+    }
+
     // Start auto-scrolling after a short delay
     setTimeout(performAutoScroll, 2000);
   } else {
@@ -536,13 +588,21 @@ const watchForBatchedReviews = (
     getGlobalCount: () => globalReviewIds.size,
     getScrollCount: () => scrollCount,
     getNoNewReviewsCount: () => noNewReviewsCount,
+    getEndDetectionStatus: () => ({
+      consecutiveNoNewElements: consecutiveNoNewElementsCount,
+      lastElementCount: lastElementCount,
+      endDetected: consecutiveNoNewElementsCount >= 3
+    }),
     forceDownload: () => {
       const remainingReviews = allReviews.slice(lastDownloadCount);
       if (remainingReviews.length > 0) {
         const timestamp = Date.now();
         const startReview = lastDownloadCount + 1;
         const endReview = allReviews.length;
-        const filename = `facebook-reviews-${startReview}-${endReview}-remaining-${timestamp}.json`;
+        const filename = `facebook-reviews-${String(startReview).padStart(
+          3,
+          '0'
+        )}-${String(endReview).padStart(3, '0')}-remaining-${timestamp}.json`;
         downloadReviews(remainingReviews, filename);
         lastDownloadCount = allReviews.length;
       }
@@ -565,6 +625,7 @@ const watchForBatchedReviews = (
     // Restart auto-scrolling
     restartAutoScroll: () => {
       noNewReviewsCount = 0;
+      consecutiveNoNewElementsCount = 0; // Reset end detection
       console.log('🔄 Restarting auto-scroll...');
       setTimeout(performAutoScroll, 1000);
     }
@@ -577,7 +638,7 @@ window.copyReviewsToClipboard = copyReviewsToClipboard;
 window.watchForBatchedReviews = watchForBatchedReviews;
 
 // Simple one-function startup for scraping
-const scrapeInit = (batchSize = 30, debug = false, autoScroll = false) => {
+const scrapeInit = (batchSize = 30, debug = false, autoScroll = true) => {
   console.log('🚀 Starting Facebook Review Scraper...');
   console.log(`📦 Batch size: ${batchSize} reviews per download`);
   if (debug) console.log('🐛 DEBUG MODE ENABLED');
@@ -606,15 +667,21 @@ const scrapeInit = (batchSize = 30, debug = false, autoScroll = false) => {
       const globalCount = batcher.getGlobalCount();
       const scrollCount = batcher.getScrollCount();
       const noNewReviewsCount = batcher.getNoNewReviewsCount();
+      const endStatus = batcher.getEndDetectionStatus();
       console.log(
-        `📊 Status: ${current.length} total reviews, ${inBatch} in current batch, ${globalCount} unique reviews tracked, ${scrollCount} scrolls performed, ${noNewReviewsCount} attempts with no new reviews`
+        `📊 Status: ${current.length} total reviews, ${inBatch} in current batch, ${globalCount} unique reviews tracked, ${scrollCount} scrolls performed, ${noNewReviewsCount} attempts with no new reviews, ${endStatus.consecutiveNoNewElements}/3 consecutive no-new-elements checks`
       );
+      if (endStatus.endDetected) {
+        console.log('🏁 End of reviews detected!');
+      }
       return {
         total: current.length,
         inBatch,
         globalCount,
         scrollCount,
-        noNewReviewsCount
+        noNewReviewsCount,
+        endDetected: endStatus.endDetected,
+        consecutiveNoNewElements: endStatus.consecutiveNoNewElements
       };
     },
     downloadRemaining: () => {
