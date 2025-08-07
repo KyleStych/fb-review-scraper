@@ -1,3 +1,4 @@
 /review-files/*.json
 /combined-reviews/*.json
 /combined-reviews/*.csv
+*.html

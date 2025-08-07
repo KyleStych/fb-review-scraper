@@ -13,6 +13,9 @@ A powerful browser-based tool for automatically scraping reviews from Facebook b
 - **🎯 Robust selectors**: Uses stable attribute-based selectors that work with Facebook's dynamic content
 - **🔄 Restart logic**: Attempts one final restart before stopping to overcome Facebook's throttling
 - **📥 Auto-download on stop**: Optionally downloads remaining reviews when scraper stops
+- **📅 Enhanced date extraction**: Multiple methods to extract review dates
+- **📜 Manual scroll mode**: Option to manually control scrolling
+- **🔄 Smart file processing**: Multiple output formats with intelligent ordering
 
 ## Quick Start
 
@@ -49,6 +52,7 @@ const scraper = scrapeInit(30, true);
 
 // Manual scroll mode (no auto-scroll)
 const scraper = scrapeInit(30, false, false);
+// Optionally scan existing content: scraper.scanExisting()
 
 // Auto-download remaining reviews when stopping
 const scraper = scrapeInit(30, false, true, true);
@@ -102,8 +106,31 @@ scraper.resetTracking();
 // Trigger manual scroll
 scraper.scroll();
 
+// Scan existing page content (manual mode only)
+scraper.scanExisting();
+
 // Restart auto-scroll if it stopped
 scraper.restartScroll();
+```
+
+### Manual Scroll Mode
+
+When starting with `autoScroll = false`, the scraper:
+- **Does NOT auto-scan** to avoid duplicates if you've already been scrolling
+- **Logs helpful tips** for manual operation
+- **Waits for manual scroll triggers** via `scraper.scroll()`
+
+```javascript
+// Start in manual mode
+const scraper = scrapeInit(30, false, false);
+// Console will show: "📜 MANUAL SCROLL MODE ENABLED"
+// Console will show: "💡 Tip: Use scraper.scanExisting() to scan current page content"
+
+// Optionally scan existing content (if you haven't been scrolling yet)
+scraper.scanExisting(); // Scans current page for reviews
+
+// Later, trigger manual scrolls
+scraper.scroll(); // Triggers one scroll cycle
 ```
 
 ## Output
@@ -123,12 +150,20 @@ facebook-reviews-061-090-1234567890.json
     "profile": "https://facebook.com/john.doe",
     "review": "Great service! Highly recommend.",
     "rating": "Recommended",
+    "originalDate": "3 weeks ago",
     "id": "JohnDoe_GreatserviceHighlyrecommend"
   }
 ]
 ```
 
 ## Advanced Features
+
+### Enhanced Date Extraction
+The scraper uses multiple methods to extract review dates:
+- **Method 1**: aria-label attributes with relative dates ("3 weeks ago")
+- **Method 2**: Text pattern matching for date patterns in review content
+- **Method 3**: Detection of encoded date elements (marked as "date_encoded")
+- **Fallback**: Date interpolation in combineReviews.js for missing dates
 
 ### Smart End Detection
 The scraper uses multiple methods to detect when all reviews have been loaded:
@@ -143,6 +178,13 @@ When the scraper thinks it's reached the end, it:
 2. **Waits 2 seconds** then tries scrolling again
 3. **If new content is found**, continues normally
 4. **If still no new content**, then truly stops
+
+### Intelligent File Processing
+The combineReviews.js script provides multiple processing modes:
+- **Standard mode**: Raw data preservation
+- **Interpolation mode**: Date interpolation with original format
+- **Judge.me mode**: Complete format conversion for Shopify import
+- **Smart ordering**: Maintains original scraped order for optimal display
 
 ### Auto-Download on Stop
 When `autoDownloadOnStop` is enabled:
@@ -179,8 +221,11 @@ When `autoDownloadOnStop` is enabled:
 Use the included `combineReviews.js` script to merge multiple downloaded files:
 
 ```bash
-# Standard format
+# Standard format (raw data, no interpolation)
 node combineReviews.js
+
+# Standard format with date interpolation
+node combineReviews.js -int
 
 # Judge.me format (for Shopify Judge.me app import)
 node combineReviews.js -jm
@@ -188,15 +233,28 @@ node combineReviews.js -jm
 
 This will:
 - Read all JSON files from `./review-files/`
+- Sort files by review numbers (first scraped = newest first)
 - Remove duplicates
 - Create combined files with metadata
 - Save as `combined-facebook-reviews.json` and `combined-facebook-reviews.csv`
+
+#### Interpolation Mode (`-int` flag)
+When using the `-int` flag, the script interpolates dates while keeping the original format:
+- **Date interpolation**: Reviews without dates get interpolated dates between known dates to maintain chronological order
+- **Original format preserved**: Keeps "review" field name and "Recommended"/"Not Recommended" ratings
+- **Processing order**: Files processed by review numbers (first scraped = newest first)
+- **Review order preserved**: Maintains original scraped order within each file
+- Output files: `interpolated-facebook-reviews.json` and `interpolated-facebook-reviews.csv`
 
 #### Judge.me Mode (`-jm` flag)
 When using the `-jm` flag, the script converts the data format for Judge.me import:
 - **"Recommended"** → **5** (5 stars)
 - **"Not Recommended"** → **1** (1 star)  
 - **"review"** → **"body"** (field name change)
+- **"3 weeks ago"** → **"2024-01-15"** (relative dates converted to YYYY-MM-DD format)
+- **Date interpolation**: Reviews without dates get interpolated dates between known dates to maintain chronological order
+- **Processing order**: Files processed by review numbers (first scraped = newest first) for optimal Judge.me display
+- **Review order preserved**: Maintains original scraped order within each file
 - Output files: `judge-me-facebook-reviews.json` and `judge-me-facebook-reviews.csv`
 
 **Example Judge.me JSON:**
@@ -206,6 +264,8 @@ When using the `-jm` flag, the script converts the data format for Judge.me impo
   "profile": "https://facebook.com/john.doe", 
   "body": "Great service!",
   "rating": 5,
+  "originalDate": "3 weeks ago",
+  "interpolatedDate": "2024-01-15",
   "id": "JohnDoe_Greatservice"
 }
 ```

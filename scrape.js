@@ -241,6 +241,66 @@ const scrapeReviewsWithMarkers = () => {
 
         const rating = isRecommendation ? 'Recommended' : 'Not Recommended';
 
+        // Extract date from multiple sources
+        let reviewDate = '';
+
+        // Method 1: Look for aria-label with relative dates
+        const dateElements = card.querySelectorAll('[aria-label*="ago"]');
+        if (dateElements.length > 0) {
+          for (let dateElement of dateElements) {
+            const ariaLabel = dateElement.getAttribute('aria-label');
+            if (ariaLabel && ariaLabel.includes('ago')) {
+              const dateMatch = ariaLabel.match(
+                /(\d+\s+(day|days|week|weeks|month|months|year|years)\s+ago)/
+              );
+              if (dateMatch) {
+                reviewDate = dateMatch[1];
+                console.log(`Found date (aria-label): ${reviewDate}`);
+                break;
+              }
+            }
+          }
+        }
+
+        // Method 2: Look for any text that might contain date patterns (moved up)
+        if (!reviewDate) {
+          const allText = card.textContent;
+          const datePatterns = [
+            /(\d+\s+(day|days|week|weeks|month|months|year|years)\s+ago)/i,
+            /(yesterday|today)/i,
+            /(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d+/i
+          ];
+
+          for (let pattern of datePatterns) {
+            const match = allText.match(pattern);
+            if (match) {
+              reviewDate = match[1];
+              console.log(`Found date (text pattern): ${reviewDate}`);
+              break;
+            }
+          }
+        }
+
+        // Method 3: Look for date elements with attributionsrc (encoded dates) - moved to last
+        if (!reviewDate) {
+          const dateLinks = card.querySelectorAll('a[attributionsrc]');
+          for (let dateLink of dateLinks) {
+            const attributionsrc = dateLink.getAttribute('attributionsrc');
+            if (
+              attributionsrc &&
+              attributionsrc.includes('comet/register/source')
+            ) {
+              // This is likely a date element, but the date is encoded
+              // For now, we'll mark it as having a date but can't extract it
+              reviewDate = 'date_encoded';
+              console.log(
+                `Found encoded date element (attributionsrc present)`
+              );
+              break;
+            }
+          }
+        }
+
         // Create a unique identifier for this review
         const reviewId = `${reviewerName}_${reviewText
           .substring(0, 50)
@@ -267,10 +327,15 @@ const scrapeReviewsWithMarkers = () => {
             profile: cleanProfileLink,
             review: reviewText,
             rating: rating,
+            date: reviewDate, // Add the extracted date
             id: reviewId
           };
           reviews.push(review);
-          console.log(`Added review for: ${reviewerName}`);
+          console.log(
+            `Added review for: ${reviewerName}${
+              reviewDate ? ` (${reviewDate})` : ''
+            }`
+          );
         }
       } else {
         console.log('No profile name found');
@@ -713,6 +778,12 @@ const watchForBatchedReviews = (
       lastElementCount: lastElementCount,
       endDetected: consecutiveNoNewElementsCount >= 5
     }),
+    processInitialReviews: initialReviews => {
+      console.log(
+        `📝 Processing ${initialReviews.length} reviews from initial scan...`
+      );
+      processNewReviews(initialReviews);
+    },
     forceDownload: () => {
       const remainingReviews = allReviews.slice(lastDownloadCount);
 
@@ -774,7 +845,14 @@ const scrapeInit = (
   console.log('🚀 Starting Facebook Review Scraper...');
   console.log(`📦 Batch size: ${batchSize} reviews per download`);
   if (debug) console.log('🐛 DEBUG MODE ENABLED');
-  if (autoScroll) console.log('🔄 AUTO-SCROLL MODE ENABLED');
+  if (autoScroll) {
+    console.log('🔄 AUTO-SCROLL MODE ENABLED');
+  } else {
+    console.log('📜 MANUAL SCROLL MODE ENABLED');
+    console.log(
+      '💡 Tip: Use scraper.scanExisting() to scan current page content'
+    );
+  }
   if (autoDownloadOnStop) console.log('📥 AUTO-DOWNLOAD ON STOP ENABLED');
   console.log('📜 Scroll down to load more reviews...');
 
@@ -790,6 +868,9 @@ const scrapeInit = (
     autoScroll,
     autoDownloadOnStop
   );
+
+  // Note: Manual mode doesn't auto-scan to avoid duplicates
+  // Use scraper.scanExisting() if you want to scan current page content
 
   // Return the batcher object for manual control
   return {
@@ -851,6 +932,30 @@ const scrapeInit = (
         batcher.restartAutoScroll();
       } else {
         console.log('Auto-scroll not enabled');
+      }
+    },
+    // Check current mode
+    getMode: () => {
+      return {
+        autoScroll,
+        debug,
+        batchSize,
+        autoDownloadOnStop
+      };
+    },
+    // Scan existing page content (manual mode only)
+    scanExisting: () => {
+      if (autoScroll) {
+        console.log('⚠️ scanExisting() is for manual mode only');
+        return;
+      }
+      console.log('🔍 Scanning existing page content...');
+      const existingReviews = scrapeReviewsWithMarkers();
+      if (existingReviews.length > 0) {
+        console.log(`📋 Found ${existingReviews.length} reviews on page`);
+        batcher.processInitialReviews(existingReviews);
+      } else {
+        console.log('📋 No reviews found on current page');
       }
     }
   };
